@@ -1,0 +1,348 @@
+{
+  "openapi": "3.0.1",
+
+  "info": {
+
+    "title": "IBM Db2 on Cloud – minimal SQL job API",
+
+    "version": "1.0.0",
+
+    "description": "Obtain an access-token, submit an SQL job, and fetch the result set. Designed for watsonx.ai Assistant custom extensions."
+
+  },
+
+  "servers": [
+
+    {
+
+      "url": "https://{hostname}/dbapi/v4",
+
+      "description": "Your specific Db2 on Cloud REST endpoint",
+
+      "variables": {
+
+        "hostname": {
+
+          "default": "19af6446-6171-4641-8aba-9dcff8e1b6ff.c1ogj3sd0tgtu0lqde00.databases.appdomain.cloud",
+
+          "description": "Your Db2 service hostname used to connect via REST API"
+
+        }
+
+      }
+
+    }
+
+  ],
+
+  "components": {
+
+    "securitySchemes": {
+
+      "BearerToken": {
+
+        "type": "http",
+
+        "scheme": "bearer",
+
+        "bearerFormat": "Db2 access token"
+
+      }
+
+    },
+
+    "parameters": {
+
+      "deploymentId": {
+
+        "name": "x-deployment-id",
+
+        "in": "header",
+
+        "required": true,
+
+        "schema": { "type": "string" },
+
+        "description": "The deployment CRN of your Db2 instance (found in the service URL)"
+
+      },
+
+      "jobId": {
+
+        "name": "jobId",
+
+        "in": "path",
+
+        "required": true,
+
+        "schema": { "type": "string" },
+
+        "description": "Identifier returned by ExecuteSQL"
+
+      }
+
+    },
+
+    "schemas": {
+
+      "TokenRequest": {
+
+        "type": "object",
+
+        "required": ["userid", "password"],
+
+        "properties": {
+
+          "userid": { "type": "string" },
+
+          "password": { "type": "string" }
+
+        }
+
+      },
+
+      "TokenResponse": {
+
+        "type": "object",
+
+        "properties": {
+
+          "token": { "type": "string" },
+
+          "expires": { "type": "integer", "description": "Unix epoch seconds" }
+
+        }
+
+      },
+
+      "SQLJobRequest": {
+
+        "type": "object",
+
+        "required": ["commands"],
+
+        "properties": {
+
+          "commands": { "type": "string", "description": "One or more SQL statements separated by the chosen separator" },
+
+          "limit":    { "type": "integer", "default": 1000 },
+
+          "separator":{ "type": "string", "default": ";" },
+
+          "stop_on_error": { "type": "string", "enum": ["yes", "no"], "default": "no" }
+
+        }
+
+      },
+
+      "SQLJobCreated": {
+
+        "type": "object",
+
+        "properties": {
+
+          "id": { "type": "string" },
+
+          "status": { "type": "string" }
+
+        }
+
+      },
+
+      "SQLJobResult": {
+
+        "type": "object",
+
+        "description": "Simplified view of the Db2 result-set JSON",
+
+        "properties": {
+
+          "status":  { "type": "string" },
+
+          "results": { "type": "array", "items": { "type": "object" } }
+
+        }
+
+      }
+
+    },
+
+    "responses": {
+
+      "Unauthorized": {
+
+        "description": "Token missing or expired"
+
+      }
+
+    }
+
+  },
+
+  "security": [
+
+    { "BearerToken": [] }
+
+  ],
+
+  "paths": {
+
+    "/auth/tokens": {
+
+      "post": {
+
+        "operationId": "GetAccessToken",
+
+        "summary": "Obtain an access token (valid ~60 min)",
+
+        "parameters": [
+
+          { "$ref": "#/components/parameters/deploymentId" }
+
+        ],
+
+        "requestBody": {
+
+          "required": true,
+
+          "content": {
+
+            "application/json": {
+
+              "schema": { "$ref": "#/components/schemas/TokenRequest" }
+
+            }
+
+          }
+
+        },
+
+        "responses": {
+
+          "200": {
+
+            "description": "Token generated",
+
+            "content": {
+
+              "application/json": {
+
+                "schema": { "$ref": "#/components/schemas/TokenResponse" }
+
+              }
+
+            }
+
+          }
+
+        },
+
+        "security": []
+
+      }
+
+    },
+
+    "/sql_jobs": {
+
+      "post": {
+
+        "operationId": "ExecuteSQL",
+
+        "summary": "Submit one SQL statement (or batch) for execution",
+
+        "parameters": [
+
+          { "$ref": "#/components/parameters/deploymentId" }
+
+        ],
+
+        "requestBody": {
+
+          "required": true,
+
+          "content": {
+
+            "application/json": {
+
+              "schema": { "$ref": "#/components/schemas/SQLJobRequest" }
+
+            }
+
+          }
+
+        },
+
+        "responses": {
+
+          "200": {
+
+            "description": "Job accepted",
+
+            "content": {
+
+              "application/json": {
+
+                "schema": { "$ref": "#/components/schemas/SQLJobCreated" }
+
+              }
+
+            }
+
+          },
+
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+
+        }
+
+      }
+
+    },
+
+    "/sql_jobs/{jobId}": {
+
+      "get": {
+
+        "operationId": "GetJobResult",
+
+        "summary": "Fetch result set (poll until status = completed)",
+
+        "parameters": [
+
+          { "$ref": "#/components/parameters/deploymentId" },
+
+          { "$ref": "#/components/parameters/jobId" }
+
+        ],
+
+        "responses": {
+
+          "200": {
+
+            "description": "Job status / data",
+
+            "content": {
+
+              "application/json": {
+
+                "schema": { "$ref": "#/components/schemas/SQLJobResult" }
+
+              }
+
+            }
+
+          },
+
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+
+          "404": { "description": "Unknown jobId" }
+
+        }
+
+      }
+
+    }
+
+  }
+}
+ 
